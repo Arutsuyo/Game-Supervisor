@@ -25,8 +25,8 @@ palServer = PalServer()
 
 # Send a message to the Eugene: pocket-pals channel
 async def SendPocketPalMessage(message):
-    if palServer.msg_channel is not None:
-        await palServer.msg_channel.send(message)
+    palServer.msg_channel = client.get_channel(EUGENE_CHANNEL_POCKETPALS_ID)
+    await palServer.msg_channel.send(message)
 
 
 # Start the server
