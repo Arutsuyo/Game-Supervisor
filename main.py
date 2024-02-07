@@ -1,5 +1,6 @@
 import discord
 from discord.ext import tasks
+from discord import app_commands
 from queue import Queue
 import asyncio
 from configuration import Configuration
@@ -16,6 +17,7 @@ intents.message_content = True
 intents.presences = False
 intents.typing = False
 client = discord.Client(intents=intents)
+tree = app_commands.CommandTree(client)
 
 # Managed Servers
 SERVER_KILL_TIMER = 5 * 12 * 10 # 5s loop*12 = 1m * min target
@@ -89,103 +91,131 @@ async def main():
 # Start the bot
 @client.event
 async def on_ready():
+    await tree.sync(guild=discord.Object(id=config.mainGuild))
     print("Hooking Discord")
     await main.start()
 
-# Reactions to messages
-@client.event
-async def on_message(message):
-    # Early out if bot message
-    if message.author == client.user:
-        return
 
+@tree.command(
+        name="palserver-start",
+        description="Request to start the palworld server, requires user to be in a voice channel.",
+        guild=discord.Object(id=config.mainGuild)
+)
+async def on_palServer_Start(message):
     # Early out if wrong Channel
     if message.channel.id != config.mainChannel:
         return
 
-    if message.content.startswith('$help'):
-        await message.channel.send("Available commands:\n- $palserver-start\n- $palserver-stop\n- $palserver-status")
-        await message.channel.send("Admin commands:\n- $admin-start\n- $admin-stop\n- $admin-kill")
+    if message.author.voice is None:
+        await message.channel.send('No voice channel detected. Cannot start monitoring')
         return
+    await message.channel.send('Starting server update check')
+    if CallServerStart(False, message.author.voice.channel.id):
+        await message.channel.send(rsp.GetResponseServerStart())
+        await message.channel.send('Monitoring voice channel. Server will close when channel becomes inactive')
+    else:
+        await message.channel.send("Server Startup failed, Please check system logs")
 
-    # Public: Start Server
-    if message.content.startswith('$palserver-start'):
-        if message.author.voice is None:
-            await message.channel.send('No voice channel detected. Cannot start monitoring')
-            return
-        await message.channel.send('Starting server update check')
-        if CallServerStart(False, message.author.voice.channel.id):
-            await message.channel.send(rsp.GetResponseServerStart())
-            await message.channel.send('Monitoring voice channel. Server will close when channel becomes inactive')
-        else:
-            await message.channel.send("Server Startup failed, Please check system logs")
+@tree.command(
+        name="palserver-stop",
+        description="Request to stop the palworld server, requires appropriate guild permissions.",
+        guild=discord.Object(id=config.mainGuild)
+)
+async def on_palServer_Stop(message):
+    # Early out if wrong Channel
+    if message.channel.id != config.mainChannel:
         return
-
-    # Public: Stop Server
-    if message.content.startswith('$palserver-stop'):
-        if palServer.status in ServerStatus.RUNNING:
-            if palServer.UserAuthorized(message.author.id):
-                await message.channel.send('Attempting to stop server...')
-                if CallServerStop(message.author.id):
-                    await message.channel.send(rsp.GetResponseServerStop())
-                else:
-                    await message.channel.send("Server Startup failed, Please check system logs")
+    
+    if palServer.status in ServerStatus.RUNNING:
+        if palServer.UserAuthorized(message.author.id):
+            await message.channel.send('Attempting to stop server...')
+            if CallServerStop(message.author.id):
+                await message.channel.send(rsp.GetResponseServerStop())
             else:
-                await message.channel.send(rsp.GetResponseUnauth())
-                await message.channel.send('Please ask PalServer Admin to stop server or GTFO of VC')
-                return
-        elif palServer.status in ServerStatus.DYING:
-            await message.channel.send(rsp.GetResponseYes())
-            await message.channel.send('Server shut down triggered early.')
-            palServer.deathTimer = 0
+                await message.channel.send("Server Startup failed, Please check system logs")
         else:
-            await message.channel.send('Error 409: Palworld Server is not currently running')
+            await message.channel.send(rsp.GetResponseUnauth())
+            await message.channel.send('Please ask PalServer Admin to stop server or GTFO of VC')
+            return
+    elif palServer.status in ServerStatus.DYING:
+        await message.channel.send(rsp.GetResponseYes())
+        await message.channel.send('Server shut down triggered early.')
+        palServer.deathTimer = 0
+    else:
+        await message.channel.send('Error 409: Palworld Server is not currently running')
+
+@tree.command(
+        name="palserver-status",
+        description="Request the status of the server.",
+        guild=discord.Object(id=config.mainGuild)
+)
+async def on_palServer_Status(message):
+    # Early out if wrong Channel
+    if message.channel.id != config.mainChannel:
         return
-        
-    # Public: Start Server
-    if message.content.startswith('$palserver-status'):
-        await message.channel.send(f"Server Status Check: {palServer.status.name}")
+    
+    await message.channel.send(f"Server Status Check: {palServer.status.name} - Detached mode: {palServer.admin_active}")
+
+@tree.command(
+        name="admin-start",
+        description="Force the server to start without voice channel requirements.",
+        guild=discord.Object(id=config.mainGuild)
+)
+async def on_admin_Start(message):
+    # Early out if wrong Channel
+    if message.channel.id != config.mainChannel:
         return
 
-    # Admin Start Server
-    if message.content.startswith('$admin-start'):
-        if not palServer.UserAuthorized(message.author.id):
-            await message.channel.send(rsp.GetResponseUnauth())
-            return
-        await message.channel.send("Admin start detected. Manually kill server when done.")
-        if CallServerStart(True, None):
-            await message.channel.send(rsp.GetResponseServerStart())
-        else:
-            await message.channel.send("Server Startup failed, Please check system logs")
+    if not palServer.UserAuthorized(message.author.id):
+        await message.channel.send(rsp.GetResponseUnauth())
+        return
+    await message.channel.send("Admin start detected. Manually kill server when done.")
+    if CallServerStart(True, None):
+        await message.channel.send(rsp.GetResponseServerStart())
+    else:
+        await message.channel.send("Server Startup failed, Please check system logs")
+
+@tree.command(
+        name="admin-stop",
+        description="Force the server to stop as soon as possible.",
+        guild=discord.Object(id=config.mainGuild)
+)
+async def on_admin_Stop(message):
+    # Early out if wrong Channel
+    if message.channel.id != config.mainChannel:
         return
 
-    # Admin Stop Server
-    if message.content.startswith('$admin-stop'):
-        if not palServer.UserAuthorized(message.author.id):
-            await message.channel.send(rsp.GetResponseUnauth())
-            return
-        await message.channel.send("Admin Stop declared")
+    if not palServer.UserAuthorized(message.author.id):
+        await message.channel.send(rsp.GetResponseUnauth())
+        return
+    await message.channel.send("Admin Stop declared")
+    if CallServerStop(message.author.id):
+        await message.channel.send(rsp.GetResponseServerStop())
+    else:
+        await message.channel.send("Server Shutdown failed, Please check system logs")
+
+@tree.command(
+        name="admin-kill",
+        description="Forces the bot to quit.",
+        guild=discord.Object(id=config.mainGuild)
+)
+async def on_admin_Stop(message):
+    # Early out if wrong Channel
+    if message.channel.id != config.mainChannel:
+        return
+    
+    if not palServer.SuperAuthorized(message.author.id):
+        await message.channel.send(rsp.GetResponseUnauth())
+        return
+    await message.channel.send(rsp.GetResponseYes())
+    if palServer.status in ServerStatus.ACTIVE:
+        await message.channel.send("Killing Palworld Server. . .")
         if CallServerStop(message.author.id):
             await message.channel.send(rsp.GetResponseServerStop())
         else:
             await message.channel.send("Server Shutdown failed, Please check system logs")
-        return
-
-    # Admin kill bot
-    if message.content.startswith('$admin-kill'):
-        if not palServer.SuperAuthorized(message.author.id):
-            await message.channel.send(rsp.GetResponseUnauth())
-            return
-        await message.channel.send(rsp.GetResponseYes())
-        if palServer.status in ServerStatus.ACTIVE:
-            await message.channel.send("Killing Palworld Server. . .")
-            if CallServerStop(message.author.id):
-                await message.channel.send(rsp.GetResponseServerStop())
-            else:
-                await message.channel.send("Server Shutdown failed, Please check system logs")
-        await message.channel.send(":vulcan:")
-        sys.exit(0)
-    # End Message Parse
+    await message.channel.send(":vulcan:")
+    sys.exit(0)
 
 client.run(config.token)
 
