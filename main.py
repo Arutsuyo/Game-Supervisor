@@ -2,11 +2,13 @@ import discord
 from discord.ext import tasks
 from queue import Queue
 import asyncio
-
-import tokenSecret
+from configuration import Configuration
 import responses as rsp
 from server import ServerStatus, PalServer
 import sys
+
+# Initialize the configuration file
+config = Configuration(r"configSecret.json")
 
 # Discord Variables
 intents = discord.Intents.default()
@@ -15,17 +17,13 @@ intents.presences = False
 intents.typing = False
 client = discord.Client(intents=intents)
 
-#Guild: Eugene
-EUGENE_GUILD_ID = 123652157097508866 # Eugene
-EUGENE_CHANNEL_POCKETPALS_ID = 939778829893910528 #packet-pals
-
 # Managed Servers
 SERVER_KILL_TIMER = 5 * 12 * 10 # 5s loop*12 = 1m * min target
 palServer = PalServer()
 
 # Send a message to the Eugene: pocket-pals channel
 async def SendPocketPalMessage(message):
-    palServer.msg_channel = client.get_channel(EUGENE_CHANNEL_POCKETPALS_ID)
+    palServer.msg_channel = client.get_channel(config.mainChannel)
     await palServer.msg_channel.send(message)
 
 
@@ -53,7 +51,7 @@ async def main():
     if palServer.msg_channel is None:
         print(f'We have logged in as {client.user}')
         print("Getting Channel Hook...")
-        palServer.msg_channel = client.get_channel(EUGENE_CHANNEL_POCKETPALS_ID)
+        palServer.msg_channel = client.get_channel(config.mainChannel)
         await SendPocketPalMessage("Game SupOwOvisor Ready!")
 
     # Admin Control
@@ -66,7 +64,7 @@ async def main():
         return
     
     # Active Monitor Loop
-    observedMembers = len(client.get_guild(EUGENE_GUILD_ID).get_channel(palServer.voip_id).members)
+    observedMembers = len(client.get_channel(palServer.voip_id).members)
     if palServer.status is ServerStatus.RUNNING:
         if observedMembers == 0:
             print("Empty VC... starting shutdown")
@@ -102,7 +100,7 @@ async def on_message(message):
         return
 
     # Early out if wrong Channel
-    if message.channel.id != EUGENE_CHANNEL_POCKETPALS_ID:
+    if message.channel.id != config.mainChannel:
         return
 
     if message.content.startswith('$help'):
@@ -189,5 +187,5 @@ async def on_message(message):
         sys.exit(0)
     # End Message Parse
 
-client.run(tokenSecret.GetDiscordSecret())
+client.run(config.token)
 

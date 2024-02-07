@@ -1,6 +1,6 @@
-
 from enum import Flag, auto
 import subprocess
+from configuration import Configuration
 import psutil
 import os
 
@@ -12,35 +12,31 @@ class ServerStatus(Flag):
     INACTIVE = DEAD
 
 class PalServer:
+    def __main__(self, configurations: Configuration):
+        # Sets the admins from the admin list in the configuration file
+        self.admins = configurations.admin
+
+        # Sets the palworld start arguments using the server path from the configuration file
+        self.args_palworld = [
+            os.path.join(configurations.server_path, "PalServer.exe"), 
+            "-players=32", 
+            "-port=25565", 
+            "-useperfthreads", 
+            "-NoAsyncLoadingThread", 
+            "-UseMultithreadForDS"
+        ]
+
+        # Sets the steamcmd arguments using the steamcmd path from the configuration file
+        self.args_steamcmd = [
+            os.path.join(configurations.steamcmd_path, "steamcmd.exe"), 
+            "+login", 
+            "anonymous", 
+            "+app_update", 
+            "2394010", 
+            "+quit"
+        ]
     
-    # Paths
-    path_steamcmd = r"D:\Games\SteamCMD";
-    path_server = r"D:\Games\SteamCMD\steamapps\common\PalServer"
-    
-    # Commands
-    args_steamcmd = [
-        os.path.join(path_steamcmd, "steamcmd.exe"), 
-        "+login", 
-        "anonymous", 
-        "+app_update", 
-        "2394010", 
-        "+quit"
-    ]
-    args_palworld = [
-        os.path.join(path_server, "PalServer.exe"), 
-        "-players=32", 
-        "-port=25565", 
-        "-useperfthreads", 
-        "-NoAsyncLoadingThread", 
-        "-UseMultithreadForDS"
-    ]
-    
-    # Server Variables
-    admins = {
-        'Nara': 122614379924553731,
-        'Chase': 312793269962801152
-    }
-    
+    # Local variables
     admin_active = False
     pid = None
     status = ServerStatus.DEAD
@@ -57,7 +53,7 @@ class PalServer:
             self.voip_id = voip
             return True
         else:
-            print(f"PalServer: Server Status {status.name}")
+            print(f"PalServer: Server Status {self.status.name}")
             return False
 
     def StopServer(self, userID=None):
@@ -78,7 +74,7 @@ class PalServer:
                     self.voip_id = None
                     break
         else:
-            print(f"PalServer: Server Status {status.name}")
+            print(f"PalServer: Server Status {self.status.name}")
         return killed
     
     def UserAuthorized(self, userID):

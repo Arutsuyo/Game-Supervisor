@@ -8,3 +8,5 @@ tokenSecret.py
 __pycache__/
 
 .vs/
+
+configSecret.json
